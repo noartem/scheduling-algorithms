@@ -12,6 +12,7 @@ import {
   ProcessId,
 } from "./scheduler/process";
 import { sortBy, debounce } from "lodash";
+import domtoimage from "dom-to-image";
 
 const processColors: Record<ProcessState, string> = {
   executing: "#6750A4",
@@ -49,15 +50,19 @@ const history = computed(() => {
 
 const tableWrapper = ref<HTMLDivElement>();
 
-const finished = computed(() =>
-  state.value.processes.every((e) => e.state === "finished")
-);
+const finished = computed(() =>state.value.processes.every((e) => e.state === "finished"));
+
+function approximatelyEqual(a: number, b: number, accuracy = 5) {
+  return Math.abs(a - b) <= accuracy;
+}
 
 const updateState = () => {
   const scrollToBottom =
     tableWrapper.value &&
-    tableWrapper.value.scrollHeight ===
-      tableWrapper.value.clientHeight + tableWrapper.value.scrollTop;
+    approximatelyEqual(
+      tableWrapper.value.scrollHeight,
+      tableWrapper.value.clientHeight + tableWrapper.value.scrollTop
+    );
 
   if (schedulingAlghoritmType.value === "fcfs") {
     state.value = fcfs(state.value);
@@ -151,6 +156,15 @@ const reset = () => {
 };
 
 onBeforeUnmount(stop);
+
+const saveAsImage = async () => {
+  const blob = await domtoimage.toBlob(document.querySelector("table"));
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "table.png";
+  a.click();
+};
 </script>
 
 <template>
@@ -242,6 +256,10 @@ onBeforeUnmount(stop);
         />
         <button @click="addPlannedProcess">Add Planned Process</button>
       </div>
+
+      <div>
+        <button @click="saveAsImage">Save As Image</button>
+      </div>
     </div>
   </div>
 </template>
@@ -252,6 +270,7 @@ onBeforeUnmount(stop);
   flex-direction: column;
   gap: 8px;
 }
+
 h1 {
   margin: 0.8em 0 0.2em 0;
 }

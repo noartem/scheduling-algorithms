@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "dom-to-image": "^2.6.0",
     "lodash": "^4.17.21",
     "nanoid": "^4.0.0",
     "vue": "^3.2.37"
