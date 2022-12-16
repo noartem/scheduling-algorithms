@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { fcfs, FCFSState } from "./scheduler/fcfs";
 import { rr, RRState } from "./scheduler/rr";
+import { mlq, MLQState } from "./scheduler/mlq";
 import {
   Process,
   makeProcesses,
@@ -11,7 +12,7 @@ import {
   ProcessState,
   ProcessId,
 } from "./scheduler/process";
-import { sortBy, debounce } from "lodash";
+import { sortBy, debounce, random } from "lodash";
 import domtoimage from "dom-to-image";
 
 const processColors: Record<ProcessState, string> = {
@@ -21,17 +22,29 @@ const processColors: Record<ProcessState, string> = {
   finished: "#635B70",
 };
 
-const schedulingAlghoritmType = ref<"fcfs" | "rr">("fcfs");
+const schedulingAlghoritmType = ref<"fcfs" | "rr" | "mlq">("fcfs");
 
-watch([schedulingAlghoritmType], () => (state.value.queue = []));
+const schedulingAlghoritms = {fcfs, rr, mlq};
 
-const state = ref<FCFSState | RRState>({
+const schedulingAlghoritm = computed(
+  () => schedulingAlghoritms[schedulingAlghoritmType.value]
+);
+
+watch([schedulingAlghoritmType], () => {
+  state.value.queue = [];
+  state.value.queues = {};
+});
+
+const state = ref<FCFSState & RRState & MLQState>({
   processes: [
-    makePlannedProcess(parsePlans("3E", "2P", "E")),
-    makePlannedProcess(parsePlans("4E", "2P", "4E")),
-    makeRandomProcess(),
+    makePlannedProcess(parsePlans("10E"), 10),
+    makePlannedProcess(parsePlans("20E"), 15),
+    makePlannedProcess(parsePlans("5E 2P 5E"), 60),
+    makePlannedProcess(parsePlans("10E 2P 5E"), 65),
+    makePlannedProcess(parsePlans("E 20P 5E"), 100),
   ],
   queue: [],
+  queues: {},
 });
 
 const stateProceses = computed(() => sortBy(state.value.processes, "uuid"));
@@ -50,7 +63,9 @@ const history = computed(() => {
 
 const tableWrapper = ref<HTMLDivElement>();
 
-const finished = computed(() =>state.value.processes.every((e) => e.state === "finished"));
+const finished = computed(() =>
+  state.value.processes.every((e) => e.state === "finished")
+);
 
 function approximatelyEqual(a: number, b: number, accuracy = 5) {
   return Math.abs(a - b) <= accuracy;
@@ -64,11 +79,7 @@ const updateState = () => {
       tableWrapper.value.clientHeight + tableWrapper.value.scrollTop
     );
 
-  if (schedulingAlghoritmType.value === "fcfs") {
-    state.value = fcfs(state.value);
-  } else {
-    state.value = rr(state.value, rrTimeout.value || 2);
-  }
+  state.value = { ...state.value, ...schedulingAlghoritm.value(state.value) };
 
   if (finished.value) {
     stop();
@@ -128,11 +139,13 @@ const addRandomProcess = () => {
 };
 
 const plannedProcessTemplate = ref("");
+const plannedProcessPriority = ref(0);
 
 const addPlannedProcess = () => {
   if (plannedProcessTemplate.value.length > 0) {
     const process = makePlannedProcess(
-      parsePlans(plannedProcessTemplate.value)
+      parsePlans(plannedProcessTemplate.value),
+      plannedProcessPriority.value || random(0, 5),
     );
     process.history.push(
       ...new Array(state.value.processes[0]?.history?.length ?? 0)
@@ -148,10 +161,11 @@ const reset = () => {
   stop();
   state.value = {
     processes: state.value.processes.map((e) => ({
-      ...makeProcesses(e.next),
+      ...makeProcesses(e.priority, e.next),
       uuid: e.uuid,
     })),
     queue: [],
+    queues: {},
   };
 };
 
@@ -177,9 +191,12 @@ const saveAsImage = async () => {
           <tr>
             <th class="index-cell" />
             <th v-for="process in stateProceses">
-              {{ process.uuid }}
+              <div>
+                {{ process.uuid }}
+                ({{ process.priority }})
 
-              <button @click="removeProcess(process)">x</button>
+                <button @click="removeProcess(process)">x</button>
+              </div>
             </th>
           </tr>
         </thead>
@@ -215,22 +232,32 @@ const saveAsImage = async () => {
           <input
             type="radio"
             id="rr"
-            name="FCFS"
+            name="Round Robin"
             value="rr"
             v-model="schedulingAlghoritmType"
           />
           <label for="fcfs">Round Robin</label>
         </div>
+        <div>
+          <input
+            type="radio"
+            id="mlq"
+            name="Multi-Level Queue"
+            value="mlq"
+            v-model="schedulingAlghoritmType"
+          />
+          <label for="fcfs">Multi-Level Queue</label>
+        </div>
       </div>
 
       <div>
-        <button v-if="history.length > 0" @click="reset">Reset</button>
-
         <button v-if="updatingInterval" @click="stop">Pause</button>
 
         <button v-else-if="history.length > 0" @click="start">Resume</button>
 
         <button v-else @click="start">Start</button>
+
+        <button v-if="history.length > 0" @click="reset">Reset</button>
       </div>
 
       <div>
@@ -254,6 +281,16 @@ const saveAsImage = async () => {
           id="planned-process-input"
           v-model="plannedProcessTemplate"
         />
+        <br>
+        <label for="planned-process-priority-input"> Planned Process Priority </label>
+        <input
+          type="number"
+          min="0"
+          max="100"
+          id="planned-process-priority-input"
+          v-model="plannedProcessPriority"
+        />
+        <br>
         <button @click="addPlannedProcess">Add Planned Process</button>
       </div>
 
@@ -304,12 +341,10 @@ h1 {
   border-right: 1px solid #213547;
   position: relative;
 }
-
-.table-wrapper table th button {
-  position: absolute;
-  right: 8px;
-  top: 5px;
-  padding-bottom: 2px;
+.table-wrapper table th > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .table-wrapper table td {

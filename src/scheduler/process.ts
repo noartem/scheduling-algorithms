@@ -12,16 +12,18 @@ export interface Process {
   state: ProcessState;
   history: Array<ProcessState>;
   next: ProcessNext;
+  priority: number;
 }
 
 let processCount = 1;
 
-export function makeProcesses(next: ProcessNext): Process {
+export function makeProcesses(priority: number, next: ProcessNext): Process {
   return {
     next,
     uuid: String(processCount++).padStart(4, "0"),
     state: "ready",
     history: [],
+    priority,
   };
 }
 
@@ -29,8 +31,9 @@ export function randomIn<T>(value: Array<T>) {
   return value[random(value.length - 1)];
 }
 
-export function makeRandomProcess() {
+export function makeRandomProcess(priority: number = random(0, 3)) {
   return makeProcesses(
+    priority,
     memoize(
       (p: Process) => {
         if (p.state === "finished" || p.history.some((e) => e === "finished")) {
@@ -79,8 +82,8 @@ export function parsePlans(
     });
 }
 
-export function makePlannedProcess(plans: Array<Plan>) {
-  return makeProcesses((p: Process) => {
+export function makePlannedProcess(plans: Array<Plan>, priority: number = random(0, 3)) {
+  return makeProcesses(priority, (p: Process) => {
     if (plans.length === 0 || p.history.some((e) => e === "finished")) {
       return "finished";
     }
